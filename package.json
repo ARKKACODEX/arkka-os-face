@@ -1,7 +1,7 @@
 {
-  "name": "daedalos",
+ "name": "ARKKA OS - CODEX Ai",
   "version": "2.0.0",
-  "description": "Desktop environment in the browser",
+  "description": "ARKKA OS Codex AI — the first artificial intelligence operating system with a centralized brain architecture for autonomous, cloud‑native multi‑server cognition, orchestrating AI agents without external API dependencies. A browser‑based desktop environment integrating advanced generative models, modular services, and scalable orchestration layers for seamless agent execution. Designed and engineered by Diego Gasques",
   "author": {
     "name": "Dustin Brett",
     "email": "dustinbrett@gmail.com",
