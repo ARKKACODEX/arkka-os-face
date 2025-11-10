@@ -1,122 +1,101 @@
-import { useTheme } from "styled-components";
-import { memo, useCallback, useMemo, useRef, useState } from "react";
-import { type Variant } from "motion/react";
-import FileManager from "components/system/Files/FileManager";
-import Sidebar from "components/system/StartMenu/Sidebar";
-import StyledStartMenu from "components/system/StartMenu/StyledStartMenu";
-import { updateInputValueOnReactElement } from "components/system/Taskbar/Search/functions";
-import {
-  SEARCH_BUTTON_TITLE,
-  START_BUTTON_TITLE,
-  maybeCloseTaskbarMenu,
-} from "components/system/Taskbar/functions";
-import useTaskbarItemTransition from "components/system/Taskbar/useTaskbarItemTransition";
-import {
-  FOCUSABLE_ELEMENT,
-  PREVENT_SCROLL,
-  START_MENU_PATH,
-  THIN_SCROLLBAR_WIDTH,
-  THIN_SCROLLBAR_WIDTH_NON_WEBKIT,
-} from "utils/constants";
-import { getNavButtonByTitle } from "hooks/useGlobalKeyboardShortcuts";
+import { useCallback } from 'react';
+import type { ComponentType } from 'react';
+import { BASE_2D_CONTEXT_MENU } from 'components/system/StartMenu/constants';
+import { useMenu } from 'contexts/menu';
+import { useProcesses } from 'contexts/process';
+import { useSession } from 'contexts/session';
+import { useTheme } from 'contexts/theme';
+import type { MenuContextProps } from 'contexts/menu/useMenu';
+import { useGlobalContext } from 'contexts/global';
+import type { GlobalContextState } from 'contexts/global';
+import type { NotificationProps } from 'types/components/system/taskbar/Notification'; 
 
-type StartMenuProps = {
-  toggleStartMenu: (showMenu?: boolean) => void;
-};
+// 1. URL COMPLETA DO CÉREBRO (Render) - AJUSTE AQUI SE NECESSÁRIO
+const BRAIN_API_URL = 'https://arkka-os-brain.onrender.com/api/codex';
 
-type StyleVariant = Variant & {
-  height?: string;
-};
+// 2. FUNÇÃO CRÍTICA DE INTEGRAÇÃO (Chamada no backend)
+const sendCommandToBrain = async (command: string, notification: (props: NotificationProps) => void, closeStartMenu: () => void) => {
+    
+    // Notificação de 'Pensando...'
+    notification({
+        title: 'Codex AI',
+        message: 'A analisar o seu pedido... (Processo de 6 passos iniciado)',
+        icon: '/Icons/codex.svg',
+        autoClose: 5000,
+    });
+    
+    closeStartMenu(); // Fecha o menu iniciar
 
-const StartMenu: FC<StartMenuProps> = ({ toggleStartMenu }) => {
-  const menuRef = useRef<HTMLElement | null>(null);
-  const {
-    sizes: { startMenu },
-  } = useTheme();
-  const [showScrolling, setShowScrolling] = useState(false);
-  const canCustomizeScrollbarWidth = useMemo(
-    () => CSS.supports("selector(::-webkit-scrollbar)"),
-    []
-  );
-  const startMenuWidth = useMemo(
-    () =>
-      startMenu.size -
-      (canCustomizeScrollbarWidth
-        ? THIN_SCROLLBAR_WIDTH
-        : THIN_SCROLLBAR_WIDTH_NON_WEBKIT),
-    [canCustomizeScrollbarWidth, startMenu.size]
-  );
-  const revealScrolling: React.MouseEventHandler = useCallback(
-    ({ clientX = 0 }) => setShowScrolling(clientX > startMenuWidth),
-    [startMenuWidth]
-  );
-  const focusOnRenderCallback = useCallback((element: HTMLElement | null) => {
-    element?.focus(PREVENT_SCROLL);
-    menuRef.current = element;
-  }, []);
-  const startMenuTransition = useTaskbarItemTransition(startMenu.maxHeight);
-  const { height } =
-    (startMenuTransition.variants?.active as StyleVariant) ?? {};
+    try {
+        const response = await fetch(BRAIN_API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command }),
+        });
 
-  return (
-    <StyledStartMenu
-      ref={focusOnRenderCallback}
-      $showScrolling={showScrolling}
-      id="startMenu"
-      onBlurCapture={(event) =>
-        maybeCloseTaskbarMenu(
-          event,
-          menuRef.current,
-          toggleStartMenu,
-          undefined,
-          START_BUTTON_TITLE
-        )
-      }
-      onKeyDown={({ key }) => {
-        if (key === "Escape") toggleStartMenu(false);
-        else if (key.length === 1) {
-          toggleStartMenu(false);
-
-          const searchButton = getNavButtonByTitle(SEARCH_BUTTON_TITLE);
-
-          if (searchButton) {
-            searchButton.click();
-
-            let tries = 0;
-            const openSearchTimerRef = window.setInterval(() => {
-              const searchInput = document.querySelector<HTMLInputElement>(
-                "main > nav .search > input"
-              );
-
-              if (searchInput) {
-                updateInputValueOnReactElement(searchInput, key);
-              }
-
-              if (searchInput || ++tries > 10) {
-                window.clearInterval(openSearchTimerRef);
-              }
-            }, 50);
-          }
+        if (!response.ok) {
+            // Se o status for 4xx ou 5xx (erro do servidor)
+            throw new Error(`Erro de Servidor: ${response.status}`);
         }
-      }}
-      onMouseLeave={() => setShowScrolling(false)}
-      onMouseMove={revealScrolling}
-      {...startMenuTransition}
-      {...FOCUSABLE_ELEMENT}
-    >
-      <Sidebar height={height} />
-      <FileManager
-        url={START_MENU_PATH}
-        hideLoading
-        hideShortcutIcons
-        isStartMenu
-        loadIconsImmediately
-        readOnly
-        skipFsWatcher
-        skipSorting
-      />
-    </StyledStartMenu>
-  );
+
+        const data = await response.json(); // Recebe o JSON do Prompt 4
+        
+        // 3. Exibe a mensagem final da IA
+        notification({
+            title: 'Codex AI',
+            message: data.userMessage || 'Comando executado, mas a resposta da IA é incompleta.',
+            icon: '/Icons/codex.svg',
+            autoClose: 15000,
+        });
+
+    } catch (error: any) {
+        // Exibe o erro
+        notification({
+            title: 'Erro no Sistema ARKKA',
+            message: `Falha na comunicação com o Cérebro. Motivo: ${error.message.substring(0, 100)}`,
+            icon: '/Icons/error.svg',
+        });
+        console.error('Erro na comunicação com o Cérebro:', error);
+    }
 };
 
-export default memo(StartMenu);
+
+// 4. COMPONENTE STARTMENU
+const StartMenu: ComponentType<MenuContextProps> = ({
+  x,
+  y,
+  ...menuContext
+}) => {
+  const { url } = useGlobalContext() as GlobalContextState;
+  const { contextMenu } = useMenu();
+  const { minimize } = useProcesses();
+  const { session, setSession } = useSession();
+  const { setThemeName } = useTheme();
+
+  // 5. SUBSTITUIÇÃO DA LÓGICA DE PESQUISA
+  const onSearch = useCallback(
+    (value: string) => {
+      const { closeStartMenu, notification } = useGlobalContext() as GlobalContextState;
+      
+      // LÓGICA DE INTEGRAÇÃO DO CÉREBRO:
+      if (value) {
+        // Chama a função de integração em vez da lógica de busca local
+        sendCommandToBrain(value, notification, closeStartMenu);
+      } else {
+        closeStartMenu();
+      }
+    },
+    [contextMenu, minimize, session, setSession, setThemeName, url]
+  );
+  
+  // Aqui você deve retornar o JSX do StartMenu...
+  return (
+    <div
+      // Adaptar o restante do seu componente StartMenu aqui.
+    >
+      {/* Exemplo de barra de pesquisa que chama onSearch */}
+      <input type="text" onChange={(e) => onSearch(e.target.value)} />
+    </div>
+  );
+};
+export default StartMenu;
